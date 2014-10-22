@@ -1,0 +1,119 @@
+# chkconfig: 2345 70 40
+# description: PJ startup script
+#
+INSTALLDIR=/XC/opensips/productionC/
+ETC_DEF=$INSTALLDIR/etc/opensips/local.m4
+ETC_M4=$INSTALLDIR/etc/opensips/opensips_sbc.m4
+ETC=$INSTALLDIR/etc/opensips/opensips_sbc.cfg
+OPENSIPSPROC=opensipsXCC
+OPENSIPS=./$OPENSIPSPROC
+OPENSIPSHOME=$INSTALLDIR/sbin
+OPENSIPSCONFIG=$INSTALLDIR/etc/opensips/opensips_sbc.cfg
+OPENSIPSCORE=$INSTALLDIR/core_dir_proxy/corefiles
+OPENSIPSPID=/var/run/$OPENSIPSPROC.pid
+SHMEM=4096
+PKGMEM=32
+
+. /etc/profile
+. /etc/rc.d/init.d/functions
+
+opensips_check_cfg(){
+ m4 $ETC_DEF $ETC_M4 > $ETC
+        if [ "$?" != '0' ]; then
+                echo -e "\nFailed to generate new config file"
+                exit 1
+        fi
+        set +e
+        #out=`($DAEMON -c -f $ETC >/dev/null) 2>&1`
+        out=`($OPENSIPSHOME/$OPENSIPS -c -f $ETC >/dev/null) 2>&1`
+        retcode=$?
+        set -e
+        if [ "$retcode" != '0' ]; then
+                echo -e "\nThere are errors in the configuration file. "\
+                        "Please fix them first"
+                echo -e "\n$out\n"
+                exit 1
+        fi
+}
+
+opensips_start(){
+      ulimit -c unlimited
+
+      cd $OPENSIPSHOME
+      echo -n "Starting OPENSIPS: "
+      [ -f $OPENSIPS ] || exit 1
+
+      $OPENSIPSHOME/$OPENSIPS -f $OPENSIPSCONFIG -w $OPENSIPSCORE -P $OPENSIPSPID -m $SHMEM -M $PKGMEM >/dev/null 2>&1   &
+      RETVAL=$?
+      echo "Starting"
+
+      sleep 2
+      if [ $RETVAL -eq 0 ] ; then
+              echo_success
+      else
+              echo_failure
+      fi
+      echo
+      return $RETVAL
+}
+
+
+
+
+case "$1" in
+   start)
+	opensips_check_cfg
+        opensips_start
+        ;;
+
+  start_no_check)
+	 ulimit -c unlimited
+
+        cd $OPENSIPSHOME
+      echo -n "Starting OPENSIP: "
+      [ -f $OPENSIPS ] || exit 1
+
+      $OPENSIPSHOME/$OPENSIPS -f $OPENSIPSCONFIG -w $OPENSIPSCORE -P $OPENSIPSPID -m $SHMEM -M $PKGMEM >/dev/null 2>&1   &
+      RETVAL=$?
+      echo "Starting"
+        sleep 2
+        if [ $RETVAL -eq 0 ] ; then
+                echo_success
+        else
+                echo_failure
+        fi
+        echo
+	;;
+
+
+  stop)
+      echo -n "Shutting down OPENSIPS: "
+      ps -ef | grep $OPENSIPSPROC | grep -v grep | awk {'print $2'} | xargs kill
+      #pkill $OPENSIPSPROC
+      RETVAL=$?
+        sleep 2
+        if [ $RETVAL -eq 0 ] ; then
+                echo_success
+        else
+                echo_failure
+        fi
+        echo
+	;;
+
+  reload)
+        $0 stop
+        $0 start_no_check
+        RETVAL=$?
+        ;;
+ 
+ restart)
+	opensips_check_cfg
+	$0 reload        
+	;;
+
+  *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+esac
+
+exit $RETVAL

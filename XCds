@@ -1,0 +1,55 @@
+# chkconfig: 345 95 5
+# description: this is the XC hds script
+#!/bin/sh
+# hds start/stop script.
+
+JavaExe="/XC/JAVA/production/bin/java -Duser.timezone=UTC -jar"
+JavaProg="/XC/ds/production/ds.jar /XC/ds/production/config/hds.properties"
+
+# echo $JavaExe/$JavaProg
+basedir=/XC/ds/production
+
+mode=$1    # start or stop
+ cd $basedir
+
+case "$mode" in
+  'start')
+    # Start daemon
+    if test -e /XC/ds/production/ds.jar
+    then
+      # $JavaExe $basedir/$JavaProg >/dev/null 2>&1 &
+         cd $basedir >/dev/null 2>&1
+        nohup $JavaExe $JavaProg & >/dev/null 2>&1 &
+        sleep 2
+        else
+      echo "Can't execute $JavaExe $JavaProg " # from dir $basedir"
+    fi
+    ;;
+
+  'stop')
+    # Stop daemon
+    echo -n "Stopping hds"
+    $JavaExe $JavaProg stop & >/dev/null 2>&1 &
+    sleep 2
+    ;;
+
+  'kill')
+    # kill daemon
+    echo -n "Killing hds process"
+    PID=`ps -ef| grep "$JavaExe $JavaProg" |grep -v grep |  awk '{print $2}'`
+    kill -9 $PID
+    ;;
+
+ 'status')
+    # check status
+    STATUS=`ps -ef| grep "$JavaExe $JavaProg" |grep -v grep `
+    echo -n 'This is a ps of the process'
+    echo $STATUS
+    ;;
+
+  *)
+    # usage
+    echo "Usage: $0 start|stop|kill|status"
+    exit 1
+    ;;
+esac

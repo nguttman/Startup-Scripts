@@ -1,0 +1,55 @@
+# chkconfig: 345 93 7
+# description: this is a wrapper for the ntpd deamon that forces an update to the time on restart
+#!/bin/sh
+
+StartupScript="/etc/init.d/ntpd"
+Updater="/usr/sbin/ntpdate"
+Time_Server="pool.ntp.org"
+
+mode=$1    # start or stop
+
+case "$mode" in
+	'start')
+	# Start daemon
+	if test -e $StartupScript
+	then
+		$StartupScript start
+	else
+		echo "Can't execute $StartupScript" # from dir $basedir"
+	fi
+    	;;
+
+	'stop')
+    	# Stop daemon
+	if test -e $StartupScript
+        then
+                $StartupScript stop
+        else
+                echo "Can't execute $StartupScript" # from dir $basedir"
+        fi
+        ;;
+
+	'status')
+    	# check status
+        if test -e $StartupScript
+        then
+                $StartupScript status
+        else
+                echo "Can't execute $StartupScript" # from dir $basedir"
+        fi
+        ;;
+	
+	'restart')
+		$StartupScript stop
+		sleep 1
+		$Updater $Time_Server
+		sleep 1
+		$StartupScript start
+	;;
+
+  *)
+    # usage
+    echo "Usage: $0 start|stop|restart|status"
+    exit 1
+    ;;
+esac
