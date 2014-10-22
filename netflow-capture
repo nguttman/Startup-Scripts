@@ -1,0 +1,145 @@
+#! /bin/sh
+# Provides:          nfcapd
+# Required-Start:    $network
+# Required-Stop:
+# Default-Start:    2 3 4 5
+# Default-Stop:      0 1 6
+ 
+ 
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin
+DESC="netflow capture daemon"
+NAME=nfcapd
+DAEMON=/usr/local/bin/$NAME
+DATA_BASE_DIR="/var/opt/netflow/"
+PIDFILE=/var/run/$NAME.pid
+DAEMON_ARGS="-B 200000 -w -T all -S 1 -z -t 60 -p 9995 -P $PIDFILE -n my_routers,XXX.XXX.XXX.XXX,$DATA_BASE_DIR";
+SCRIPTNAME=/etc/init.d/netflow-capture
+
+. /etc/profile
+. /etc/rc.d/init.d/functions
+ 
+# Exit if the package is not installed
+[ -x "$DAEMON" ] || exit 0
+ 
+ 
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+	status_nfcapd
+	if [ $? -eq 0 ]; then
+		echo -n $"We cannot start $NAME as it is already started: "
+		echo_failure
+                echo
+		exit 0;
+	else
+		echo -n "Starting $NAME: "
+		daemon $DAEMON -D $DAEMON_ARGS
+		RETVAL=$?
+		if [ $RETVAL -eq 0 ]; then
+                        echo_success
+                        echo
+                else
+                        echo_failure
+                        echo
+                fi
+		status_nfcapd
+		exit 0;
+	fi
+}
+ 
+#
+# Function that stops the daemon/service
+#
+do_stop()
+{
+	if [ -e "$PIDFILE" ]; then
+		echo -n $"Stopping $NAME: "
+		cat $PIDFILE | xargs kill
+	 	RETVAL=$?
+		if [ $RETVAL -eq 0 ] && rm -f $LOCK_FILE; then
+                	echo_success
+	                echo
+		else
+	                echo_failure
+	                echo
+		fi
+		
+		status_nfcapd
+		exit 0;
+	else
+                echo -n $"Unable to stop $NAME. no pidfile found: "
+                echo_failure
+                echo
+		exit 0;
+	fi
+}
+ 
+do_restart()
+{
+        if [ -e "$PIDFILE" ]; then
+	        echo -n $"Stopping $NAME: "
+	        cat $PIDFILE | xargs kill
+        	RETVAL=$?
+        	if [ $RETVAL -eq 0 ] && rm -f $LOCK_FILE; then
+			echo_success
+        		echo 
+		fi
+	else 
+		echo "Unable to stop $NAME. no pidfile found"
+		echo_failure
+		echo
+	fi
+        status_nfcapd
+        if [ $? -eq 0 ]; then
+                echo -n $"We cannot start $NAME as it is already started: "
+                return 1
+        else
+                echo -n "Starting $NAME: "
+                daemon $DAEMON -D $DAEMON_ARGS
+                RETVAL=$?
+                if [ $RETVAL -eq 0 ]; then
+                        echo_success
+                        echo
+                else
+                        echo_failure
+                        echo
+                fi
+		status_nfcapd
+		exit 0;
+        fi	
+}
+
+status_nfcapd () {
+	if pidof $NAME > /dev/null 2>&1; then
+		RETVAL=$?
+		echo "Process $NAME is currently running"
+		return $RETVAL
+	else
+		RETVAL=$?
+		echo "Process $NAME is NOT currenlty running"
+		return $RETVAL
+	fi
+}
+case "$1" in
+  start)
+        do_start
+	;;
+  stop)
+        do_stop
+        ;;
+  restart)
+        do_restart
+        ;;
+  status)
+	status_nfcapd $DAEMON
+	;;
+  *)
+        echo "Usage: $SCRIPTNAME {start|stop|restart|status}"
+        exit 3
+        ;;
+esac
+
+exit 0
