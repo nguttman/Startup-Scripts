@@ -1,0 +1,121 @@
+# chkconfig: 345 93 7
+# Generic startup script wrapper for java processes
+# Released under GPL by Noah Guttman. Copyright 20014
+#!/bin/sh
+
+#Path to this startup script
+StartupScript="/etc/init.d/generic_java_startup_script"
+#path to java instalation with basic arguments
+JavaExe="/usr/loacl/bin/java -Duser.timezone=UTC -Xmx8000M -jar"
+#Path to jar instalation (used for wher to put logs)
+basedir="/XC/syncmanager/productionTC"
+#Path to the .jar file
+JavaProg="/XC/syncmanager/productionTC/SyncManager.jar"
+#Any extra arguments you want declared after the .jar file
+dsPropertiesFile=""
+#Name of the PID file
+PIDFILE=gjss.pid
+#Cosmetic information that will show up on startup/status/shutdown etc
+VERSION="GJSS v2.1.1"
+
+if [ ! -d /var/run ]
+then
+        echo "ERROR! directory: /var/run does not exist (location of pid file). Please create and rerun"
+        exit 99
+fi
+
+
+mode=$1    # start or stop
+ cd $basedir
+
+case "$mode" in
+	'start')
+	# Start daemon
+	if test -e $JavaProg
+	then
+		if [ -f /var/run/$PIDFILE ]
+		then
+			pid=`cat /var/run/$PIDFILE`
+			x=`ps -p $pid`
+			psrc=$?
+			if [ $psrc = 0 ]
+			then
+				echo "ERROR! $VERSION process already running - pid:$pid"
+                		exit 99
+        		else
+                		echo "/var/run/$PIDFILE is present, but process is not running. pid file will be updated when process starts."
+			fi
+    		else
+        		x=`ps -ef | grep $JavaProg | grep -v grep`
+        		if [ x"$x" != x ]
+        		then
+                		echo $x
+                		echo "$VERSION already running - without a pid file"
+                		exit 98
+			else
+				echo "Starting $VERSION"
+			fi
+       		fi
+		cd $basedir >/dev/null 2>&1
+#                nohup $JavaExe $JavaProg $dsPropertiesFile & >/dev/null 2>&1 &
+		nohup $JavaExe $JavaProg $dsPropertiesFile >> $basedir/nohup.out &
+                sleep 1
+                pid=`ps -ef | grep $JavaProg | grep -v grep | awk {'print $2'}`
+                echo "running $VERSION with pid:<${pid}>"
+                echo $pid > /var/run/$PIDFILE
+	else
+		echo "Can't execute $JavaExe $JavaProg " # from dir $basedir"
+	fi
+    	;;
+
+	'stop')
+    	# Stop daemon
+	if [ -f /var/run/$PIDFILE ]
+	then
+		pid=`cat /var/run/$PIDFILE`
+		x=`ps -p $pid`
+		psrc=$?
+		if [ $psrc = 0 ]
+		then
+			echo "Killing the $VERSION"
+			kill -9 $pid
+			rm -rf /var/run/$PIDFILE
+		else
+			echo "pid: $pid not running - Nothing to kill"
+			rm -rf /var/run/$PIDFILE
+		fi
+	else
+		echo "/var/run/$PIDFILE not found  - $VERSION does not appear to be running"
+	fi
+	;;
+
+	'status')
+    	# check status
+	       if [ -f $PIDFILE ]
+        then
+                pid=`cat /var/run/$PIDFILE`
+                x=`ps -p $pid`
+                psrc=$?
+                if [ $psrc = 0 ]
+                then
+                        echo "The $VERSION $JavaProg is running"
+                else
+                        echo "The $VERSION $JavaProg pid: $pid not running - PID file should have been removed."
+                fi
+        else
+                echo "The $VERSION $JavaProg is not running"
+        fi
+    	;;
+	'restart')
+		echo "Restarting the $VERSION"
+		$StartupScript stop
+		sleep 2
+		$StartupScript start
+	;;
+
+  *)
+    # usage
+    echo "Usage: $0 start|stop|restart|status"
+    exit 1
+    ;;
+esac

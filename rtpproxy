@@ -1,0 +1,232 @@
+# chkconfig: 345 93 7
+#!/bin/sh
+#
+# Copyright (C) 2014 nOAH gUTTMAN
+#
+# RTP Proxy Daemon
+#
+
+# Source function library.
+. /etc/init.d/functions
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin
+
+##############################
+#####Configurable options#####
+##############################
+#siID in serviceinstances and id in opensips.nhsockets
+SERVICEID=443
+#rtpproxy binary
+DAEMON=/usr/local/bin/rtpproxyXC
+#name of this thread
+NAME=rtpproxy1
+#Description
+DESC="RTP proxy port 7899"
+#Opensips to notify
+OPENSIPS_MI_DATAGRAM_SOCKETS=(XXX.XXX.XXX.XXX:9191 YYY.YYY.YYY.YYY:9191)
+#Box IP - can be shared with other instances
+LISTEN_IP="AAA.BBB.CCC.DDD"
+#Port used for communcations with openSIPS - must be unique on this box
+COMMPORT=7899
+#Port used for timout messages - the same for all instances on this box
+TIMEOUTPORT=9999
+#Port range used for calls - must not overlap with other processes
+PORTMIN=30000
+PORTMAX=33999
+#Which syslogger to use and log level
+SYSLOGER=LOG_LOCAL1
+LOGLEVEL=INFO
+#No media teardown occafter this many seconds.
+NOMEDIATEARDOWN=60
+#Maximum Descriptors (open Sessions)
+MAXDESC=4096
+
+#You can have this startup script interact with as many opsensips DBs as you like.
+#First database/environment that will be using this rtpproxy
+HOST1="QQQ.QQQ.QQQ.QQQ"
+USER1="rtpproxy-user"
+PASS1="qpz-krtpXC"
+DB1="rtpproxy-password"
+SETID1="0"
+
+#Second database/environment that will be using this rtpproxy
+HOST2="mydatabase.mydomain.net"
+USER2="rtpproxy-user"
+PASS2="rtpproxy-password"
+DB2="opensips2"
+SETID2="0"
+
+DBS=2
+
+##############################
+#####Change nothing below#####
+##############################
+[ -x $DAEMON  ] || exit 0
+
+COMM=$1
+COMMPARAM=$2
+
+RETVAL=0
+
+PIDFILE=/var/run/$NAME.pid
+
+rtpproxy_start() {
+        #Start daemon.
+        echo -ne " \tStarting $DESC $NAME"
+
+        if [ ! -f $PIDFILE ]; then
+
+                PARAMS="-F -p $PIDFILE -l $LISTEN_IP -s udp:$LISTEN_IP:$COMMPORT -m $PORTMIN -M $PORTMAX -n $LISTEN_IP:$TIMEOUTPORT -d $LOGLEVEL:$SYSLOGER -i -T $NOMEDIATEARDOWN -L $MAXDESC"
+
+                daemon $DAEMON $PARAMS
+                RETVAL=$?
+                if [ $RETVAL -eq 0 ] ; then
+                       echo
+                else
+                       echo_failure
+                fi
+             echo
+        fi
+}
+
+rtpproxy_stop() {
+        # Stop daemon
+        # ensure that db has this rtpproxy out of route 
+	n=1 ; while [ $n -le $DBS ]
+		do eval HOST=\$"HOST${n}" ; eval USER=\$"USER${n}" ; eval PASS=\$"PASS${n}" ; eval DB=\$"DB${n}" ; eval SETID=\$"SETID${n}"
+		MYSQL="mysql -h$HOST -u$USER  -p$PASS -D$DB"
+		$MYSQL -e "update nh_sockets set set_id='8' where rtpproxy_sock='udp:$LISTEN_IP:$COMMPORT';"
+	n=$(( n+1 )) ; done
+        # now the reload should occur
+	rtpproxy_refresh
+
+        echo -ne $"\tShutting down $DESC($NAME) with PID file $PIDFILE: "
+        cat $PIDFILE |xargs kill
+        RETVAL=$?
+                if [ $RETVAL -eq 0 ] ; then
+                echo_success
+        else
+                echo_failure
+        fi
+        echo
+        return $RETVAL
+}
+
+rtpproxy_noroute() {
+        #Now we edit the entry
+	n=1 ; while [ $n -le $DBS ]
+		do eval HOST=\$"HOST${n}" ; eval USER=\$"USER${n}" ; eval PASS=\$"PASS${n}" ; eval DB=\$"DB${n}" ; eval SETID=\$"SETID${n}"
+		MYSQL="mysql -h$HOST -u$USER  -p$PASS -D$DB"
+		$MYSQL -e "update $DB.nh_sockets set set_id='8' where rtpproxy_sock ='udp:$LISTEN_IP:$COMMPORT';"
+	n=$(( n+1 )) ; done
+        # now the reload should occur
+	rtpproxy_refresh
+}
+rtpproxy_yesroute() {
+        #Now we edit the entry
+	n=1 ; while [ $n -le $DBS ]
+		do eval HOST=\$"HOST${n}" ; eval USER=\$"USER${n}" ; eval PASS=\$"PASS${n}" ; eval DB=\$"DB${n}" ; eval SETID=\$"SETID${n}"
+		MYSQL="mysql -h$HOST -u$USER  -p$PASS -D$DB"
+		$MYSQL -e "update $DB.nh_sockets set set_id='$SETID' where rtpproxy_sock ='udp:$LISTEN_IP:$COMMPORT';"
+	n=$(( n+1 )) ; done
+        # now the reload should occur
+	rtpproxy_refresh
+}
+
+rtpproxy_refresh() {
+        # This is just a reload
+        for i in "${OPENSIPS_MI_DATAGRAM_SOCKETS[@]}"
+        do
+                IP=${i/:*/}
+                PORT=${i/*:/}
+
+                RELOAD_RESULT=`echo -ne ":nh_reload_rtpp:\n\n" | nc -uw1 $IP $PORT`
+                if [[ ! "$RELOAD_RESULT" =~ "200" ]]; then
+                        if [ "$RELOAD_RESULT" = "500 Server Internal Error" ]; then
+                                echo -e "OpenSIPS ($IP) reload successfully completed. WARNING: There are no nh sockets present in CACHE/DB"
+                        else
+                                echo -e "OpenSIPS ($IP) reload could not be performed "
+                        fi
+                else
+                        echo -e "\tOpenSIPS ($IP) reload successfully completed "
+                fi
+
+        done
+}
+
+rtpproxy_status() {
+	n=1 ; while [ $n -le $DBS ]
+	do eval HOST=\$"HOST${n}" ; eval USER=\$"USER${n}" ; eval PASS=\$"PASS${n}" ; eval DB=\$"DB${n}" ; eval SETID=\$"SETID${n}"
+		MYSQL="mysql -h$HOST -u$USER  -p$PASS -D$DB"
+		#Database/environment that will be using this rtpproxy
+		echo "Opensips database $DB on $HOST"
+		$MYSQL -e "select set_id from $DB.nh_sockets where rtpproxy_sock ='udp:$LISTEN_IP:$COMMPORT';"
+	n=$(( n+1 )) ; done
+        if [ ! -f $PIDFILE ]; then
+                echo "$PIDFILE not found. is $NAME running?"
+        else
+                ps -c `cat $PIDFILE`
+        fi
+}
+
+rtpproxy_restart() {
+        # restar tthe daemon without touching the DB or doing a refresh
+        echo -ne $"\tShutting down $DESC($NAME) with PID file $PIDFILE: "
+        cat $PIDFILE |xargs kill
+        RETVAL=$?
+                if [ $RETVAL -eq 0 ] ; then
+                echo_success
+        else
+                echo_failure
+        fi
+        echo
+        sleep 2
+        #Start daemon.
+        echo -ne "\tStarting $DESC $NAME"
+
+        if [ ! -f $PIDFILE ]; then
+
+                PARAMS="-F -p $PIDFILE -l $LISTEN_IP -s udp:$LISTEN_IP:$COMMPORT -m $PORTMIN -M $PORTMAX -n $LISTEN_IP:$TIMEOUTPORT -d $LOGLEVEL:$SYSLOGER -i -T $NOMEDIATEARDOWN -L $MAXDESC"
+
+                daemon $DAEMON $PARAMS
+                RETVAL=$?
+                if [ $RETVAL -eq 0 ] ; then
+                        echo
+                else
+                        echo_failure
+                fi
+                echo
+
+	fi
+        return $RETVAL
+}
+
+# See how we were called.
+case "$1" in
+        start)
+                sleep 2
+                rtpproxy_start
+                ;;
+        stop)
+                rtpproxy_stop
+                ;;
+        restart)
+                rtpproxy_restart
+                ;;
+        status)
+                rtpproxy_status
+                ;;
+        noroute)
+                rtpproxy_noroute
+                ;;
+        yesroute)
+                rtpproxy_yesroute
+                ;;
+        refresh)
+                rtpproxy_refresh
+                ;;
+        *)
+                echo "Usage: $0 {start|stop|restart|status|noroute|yesroute|refresh}"
+                exit 1
+esac
+
+exit $RETVAL
